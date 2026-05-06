@@ -1,22 +1,34 @@
-a.out: semanttest.o y.tab.o lex.yy.o errormsg.o symbol.o absyn.o env.o types.o semant.o table.o util.o temp.o x86_64frame.o translate.o printtree.o tree.o
-	cc -g semanttest.o y.tab.o lex.yy.o errormsg.o symbol.o absyn.o env.o types.o semant.o table.o util.o temp.o x86_64frame.o translate.o printtree.o tree.o
+BIN := bin
+CC := cc
+CFLAGS := -g -I. -I$(BIN)
+OBJS := $(addprefix $(BIN)/, semanttest.o y.tab.o lex.yy.o errormsg.o symbol.o absyn.o env.o types.o semant.o table.o util.o temp.o x86_64frame.o translate.o printtree.o tree.o)
 
-%.o: %.h %.c
-	cc -g -c $*.c
+$(BIN)/a.out: $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) -o $@
 
-y.tab.c: tiger.grm
-	yacc -dv tiger.grm
+$(BIN):
+	mkdir -p $(BIN)
 
-y.tab.h: y.tab.c
+$(BIN)/%.o: %.c | $(BIN)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-lex.yy.c: tiger.lex
-	lex tiger.lex
+$(BIN)/semanttest.o: semanttest.c | $(BIN)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-x86_64frame.o: frame.h x86_64frame.c
-	cc -g -c x86_64frame.c
+$(BIN)/y.tab.o: $(BIN)/y.tab.c $(BIN)/y.tab.h | $(BIN)
+	$(CC) $(CFLAGS) -c $(BIN)/y.tab.c -o $@
+
+$(BIN)/lex.yy.o: $(BIN)/lex.yy.c $(BIN)/y.tab.h | $(BIN)
+	$(CC) $(CFLAGS) -c $(BIN)/lex.yy.c -o $@
+
+$(BIN)/y.tab.c $(BIN)/y.tab.h: tiger.grm | $(BIN)
+	cd $(BIN) && yacc -dv ../tiger.grm
+
+$(BIN)/lex.yy.c: tiger.lex $(BIN)/y.tab.h | $(BIN)
+	cd $(BIN) && lex ../tiger.lex
 
 clean: 
-	rm -f a.out *.o y.tab.* lex.yy.c y.output
+	rm -rf $(BIN)
 
 all-tests := $(addsuffix .test, $(notdir $(basename $(wildcard ../testcases_correct/*.tig))))
 
@@ -26,7 +38,7 @@ test49.test:
 	@echo "Skip test49.tig"
 
 %.test: ../testcases_correct/%.tig
-	mkdir -p testoutput
-	./a.out $< > testoutput/$@ 2>&1
-	echo "==============================" >> testoutput/$@
-	cat $< >> testoutput/$@
+	mkdir -p $(BIN)/testoutput
+	$(BIN)/a.out $< > $(BIN)/testoutput/$@ 2>&1
+	echo "==============================" >> $(BIN)/testoutput/$@
+	cat $< >> $(BIN)/testoutput/$@
