@@ -1,0 +1,27 @@
+# Build outputs
+a.out
+*.o
+
+# Generated parser/lexer files
+y.tab.c
+y.tab.h
+y.output
+lex.yy.c
+
+# Test output
+testoutput/
+*.test
+
+# Debug/temp files
+core
+core.*
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+
+# Editor/OS metadata
+.vscode/
+.idea/
+.DS_Store

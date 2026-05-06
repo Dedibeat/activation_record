@@ -8,6 +8,15 @@
 #include "printtree.h"
 #include "translate.h"
 
+/*
+ * Chapter 6 activation-record scaffold.
+ *
+ * The general IR translation helpers are left in place. The activation-record
+ * decisions, level/frame wiring, static-link traversal, variable access, call
+ * static-link passing, and procedure-entry handling are intentionally reduced
+ * to TODO checkpoints for you to implement.
+ */
+
 struct Tr_level_ { Tr_level parent; F_frame frame; };
 
 struct Tr_access_ {
@@ -48,9 +57,15 @@ Tr_level Tr_outermost(void) {
 }
 
 Tr_level Tr_newLevel(Tr_level parent, Temp_label name, U_boolList formals) {
+  /*
+   * TODO(ch6): Create a lexical level with a frame.
+   *
+   * The finished version should prepend the static-link formal to the user's
+   * formals and call F_newFrame with the resulting escape list.
+   */
   Tr_level lev = checked_malloc(sizeof(*lev));
   lev->parent = parent;
-  lev->frame = F_newFrame(name, U_BoolList(TRUE, formals));
+  lev->frame = F_newFrame(name, formals);
   return lev;
 }
 
@@ -61,6 +76,12 @@ Tr_access Tr_Access(Tr_level level, F_access access) {
 }
 
 Tr_accessList Tr_formals(Tr_level level) {
+  /*
+   * TODO(ch6): Decide how to expose formals to semant.c.
+   *
+   * If your frame stores the static link as the first formal, either skip it
+   * here for user parameters or update semant.c to skip it when binding params.
+   */
   F_accessList formals = F_formals(level->frame);
   Tr_accessList h = Tr_AccessList(NULL,NULL), p = h;
   for (; formals; formals = formals->tail) {
@@ -72,9 +93,10 @@ Tr_accessList Tr_formals(Tr_level level) {
   return p;
 }
 
-
 Tr_access Tr_allocLocal(Tr_level level, bool escape) {
-  Tr_access a = checked_malloc(sizeof(*a));
+  /*
+   * TODO(ch6): Allocate a local in this level's frame and remember the level.
+   */
   return Tr_Access(level, F_allocLocal(level->frame, escape));
 }
 
@@ -132,7 +154,7 @@ static T_exp unEx(Tr_exp e) {
       return e->u.ex;
     case Tr_nx:
       return T_Eseq(e->u.nx, T_Const(0));
-    case Tr_cx: {// flag := (a > b)
+    case Tr_cx: {
       Temp_temp r = Temp_newtemp();
       Temp_label t = Temp_newlabel(), f = Temp_newlabel();
       doPatch(e->u.cx.trues, t);
@@ -141,7 +163,7 @@ static T_exp unEx(Tr_exp e) {
               T_Eseq(e->u.cx.stm,
               T_Eseq(T_Label(f),
               T_Eseq(T_Move(T_Temp(r), T_Const(0)),
-              T_Eseq(T_Label(t), 
+              T_Eseq(T_Label(t),
               T_Temp(r))))));
     }
   }
@@ -155,38 +177,25 @@ static T_stm unNx(Tr_exp e) {
       return e->u.nx;
     case Tr_cx:
       return T_Exp(unEx(e));
-      Temp_temp r = Temp_newtemp();
-      Temp_label t = Temp_newlabel(), f = Temp_newlabel();
-      doPatch(e->u.cx.trues, t);
-      doPatch(e->u.cx.falses, f);
-      return  T_Seq(T_Move(T_Temp(r), T_Const(1)),
-              T_Seq(e->u.cx.stm,
-              T_Seq(T_Label(f),
-              T_Seq(T_Move(T_Temp(r), T_Const(0)),
-              T_Seq(T_Label(t),
-              T_Exp(T_Temp(r)))))));
   }
-    assert(0);
+  assert(0);
 }
 static struct Cx unCx(Tr_exp e) {
   switch (e->kind) {
-    case Tr_ex: { // if(x)
+    case Tr_ex: {
       T_stm stm = T_Cjump(T_ne, unEx(e), T_Const(0), NULL, NULL);
       patchList trues  = PatchList(&stm->u.CJUMP.true,  NULL);
       patchList falses = PatchList(&stm->u.CJUMP.false, NULL);
       struct Cx cx = { trues, falses, stm };
       return cx;
     }
-    case Tr_nx: {
+    case Tr_nx:
       assert(0);
-      break;
-    }
     case Tr_cx:
       return e->u.cx;
   }
   assert(0);
 }
-
 
 Tr_exp Tr_noExp() {
   return Tr_Ex(T_Const(0));
@@ -207,32 +216,27 @@ Tr_exp Tr_stringExp(string s) {
 
 Tr_exp Tr_simpleVar(Tr_access acc, Tr_level lev) {
   /*
-   * MEM(+(CONST kn, MEM(+(CONST kn-1, ...
-   *                   MEM(+(CONST k1, TEMP FP)) ... ))))
+   * TODO(ch6): Translate a variable access.
+   *
+   * If acc->level == lev, use the current frame pointer. Otherwise follow
+   * static links from lev until reaching acc->level, then call F_Exp.
    */
-  if (acc->level == lev) return Tr_Ex(F_Exp(acc->access, T_Temp(F_FP())));
-
-  Tr_access static_link_offset = Tr_formals(lev)->head;
-  return Tr_Ex(F_Exp(static_link_offset->access, unEx(Tr_simpleVar(acc, lev->parent))));
+  (void)acc;
+  (void)lev;
+  return Tr_Ex(T_Const(0));
 }
 Tr_exp Tr_fieldVar(Tr_exp var, int index, Tr_level lev) {
-  /*
-   * MEM(+(var, *(index, CONST wordsize)))
-   */
-  // todo: check access to nil
+  (void)lev;
   return Tr_Ex(T_Mem(
                 T_Binop(T_plus, unEx(var),
                                 T_Binop(T_mul, T_Const(index),
                                                T_Const(F_wordSize)))));
 }
 Tr_exp Tr_subscriptVar(Tr_exp var, Tr_exp sub, Tr_level lev) {
-  /*
-   * MEM(+(var, *(sub, CONST wordsize)))
-   */
-  // todo: check index out of bounds
+  (void)lev;
   return Tr_Ex(T_Mem(
                 T_Binop(T_plus, unEx(var),
-                                T_Binop(T_mul, unEx(sub), 
+                                T_Binop(T_mul, unEx(sub),
                                                T_Const(F_wordSize)))));
 }
 
@@ -319,7 +323,7 @@ Tr_exp Tr_recordExp(Tr_expList fields, int size) {
   Temp_temp r = Temp_newtemp();
   T_stm acc =
       T_Seq(T_Move(T_Temp(r),
-                   F_externalCall("malloc", //todo:malloc
+                   F_externalCall("malloc",
                                   T_ExpList(T_Const(size * F_wordSize), NULL))),
             NULL);
 
@@ -357,19 +361,21 @@ Tr_exp Tr_breakExp(Temp_label done) {
 }
 
 Tr_exp Tr_callExp(Temp_label name, Tr_expList args, Tr_level cur, Tr_level lev) {
+  /*
+   * TODO(ch6): Translate a call with the correct static-link argument.
+   *
+   * Build a T_expList for user args, compute the frame pointer for lev's
+   * parent by walking from cur through static links, then place that static
+   * link where your calling convention expects it.
+   */
   T_expList h = T_ExpList(NULL, NULL), p = h;
   for (; args; args = args->tail) {
     p->tail = T_ExpList(unEx(args->head), NULL);
     p = p->tail;
   }
-
-  T_exp fp = T_Temp(F_FP());
-	while (cur != lev->parent) {
-		fp = F_Exp(F_formals(cur->frame)->head, fp);
-		cur = cur->parent;
-	}
-  h->head = fp;
-
+  (void)cur;
+  (void)lev;
+  h->head = T_Const(0);
   return Tr_Ex(T_Call(T_Name(name), h));
 }
 
@@ -379,22 +385,31 @@ Tr_exp Tr_assignExp(Tr_exp lvar, Tr_exp rvar) {
 
 Tr_exp Tr_LetExp(Tr_expList decs, Tr_exp body) {
   Tr_exp d = Tr_seqStm(decs);
-  
+
   return Tr_Nx(T_Seq(unNx(d), unNx(body)));
 }
 
 Tr_exp Tr_seqStm(Tr_expList list) {
+  if (!list) return Tr_noExp();
   if (!list->tail) return list->head;
   return Tr_Nx(T_Seq(unNx(list->head), unNx(Tr_eseqExp(list->tail))));
 }
 
 Tr_exp Tr_eseqExp(Tr_expList list) {
+  if (!list) return Tr_noExp();
   if (!list->tail) return list->head;
   return Tr_Ex(T_Eseq(unNx(list->head), unEx(Tr_eseqExp(list->tail))));
 }
 
 void Tr_procEntryExit(Tr_level level, Tr_exp body, Tr_accessList formals) {
+  /*
+   * TODO(ch6): Finish procedure-entry handling.
+   *
+   * Later, move the function result into F_RV if needed and call
+   * F_procEntryExit1 to handle formal/register moves.
+   */
 	F_frag frag = F_ProcFrag(unNx(body), level->frame);
+  (void)formals;
 	fragList = F_FragList(frag, fragList);
 }
 
