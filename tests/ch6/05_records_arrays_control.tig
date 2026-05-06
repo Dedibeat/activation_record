@@ -1,0 +1,11 @@
+let
+  type pair = {a: int, b: int}
+  type intArray = array of int
+  var p := pair {a = 1, b = 2}
+  var xs := intArray [3] of 7
+in
+  if p.b < xs[0] then
+    p.a := xs[1]
+  else
+    p.b := 9
+end

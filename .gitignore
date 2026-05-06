@@ -1,4 +1,5 @@
 # Build outputs
+bin/
 a.out
 *.o
 
@@ -25,3 +26,6 @@ core.*
 .vscode/
 .idea/
 .DS_Store
+.codex
+.agents
+AGENTS.md
