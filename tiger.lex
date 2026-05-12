@@ -6,134 +6,162 @@
 #include "y.tab.h"
 #include "errormsg.h"
 
-int charPos=1;
-
+int charPos = 1;
+int bracketCount = 0;
 int yywrap(void)
 {
- charPos=1;
- return 1;
+    charPos = 1;
+    return 1;
 }
-
 
 void adjust(void)
 {
- EM_tokPos=charPos;
- charPos+=yyleng;
+    EM_tokPos = charPos;
+    charPos += yyleng;
 }
-
-// comment nesting
-int commentNesting = 0;
-
-// string buffer
-static char *strbuf;
-static int strbuf_size;
-static int strbuf_leng;
-static void strbuf_init() {
-  if(strbuf) free(strbuf);
-  strbuf = checked_malloc(32);
-  strbuf[0] = '\0';
-  strbuf_size = 32;
-  strbuf_leng = 0;
-}
-static void strbuf_pushback(char ch) {
-  if (strbuf_leng == strbuf_size) {
-    char *tmp = checked_malloc(strbuf_size*=2);
-    memcpy(tmp, strbuf, strbuf_leng); free(strbuf);
-    strbuf = tmp;
-  }
-  strbuf[strbuf_leng] = ch;
-  strbuf[strbuf_leng+=1] = '\0';
-}
-
 %}
-
-space     [ \t\n\r]
-id        [a-zA-Z][a-zA-Z0-9_]*
-ctrl_char \^[@A-Z\[\\\]\^_\?]
-
-%x ID_STATE COMMENT_STATE STRING_STATE STRING_ESCAPE_STATE
-
+%x COMM
 %%
-[ \t\r]	{adjust(); continue;}
-\n	    {adjust(); EM_newline(); continue;}
+<INITIAL>[ \t]+      { adjust(); }
+<INITIAL>\n          { adjust(); EM_newline(); }
 
+<INITIAL>","         { adjust(); return COMMA; }
+<INITIAL>":"         { adjust(); return COLON; }
+<INITIAL>";"         { adjust(); return SEMICOLON; }
+<INITIAL>"("         { adjust(); return LPAREN; }
+<INITIAL>")"         { adjust(); return RPAREN; }
+<INITIAL>"["         { adjust(); return LBRACK; }
+<INITIAL>"]"         { adjust(); return RBRACK; }
+<INITIAL>"{"         { adjust(); return LBRACE; }
+<INITIAL>"}"         { adjust(); return RBRACE; }
+<INITIAL>"."         { adjust(); return DOT; }
 
-","	 {adjust(); return COMMA;}
-":"  {adjust(); return COLON;}
-";"  {adjust(); return SEMICOLON;}
-"."  {adjust(); return DOT;}
-"("  {adjust(); return LPAREN;}
-")"  {adjust(); return RPAREN;}
-"["  {adjust(); return LBRACK;}
-"]"  {adjust(); return RBRACK;}
-"{"  {adjust(); return LBRACE;}
-"}"  {adjust(); return RBRACE;}
-"+"  {adjust(); return PLUS;}
-"-"  {adjust(); return MINUS;}
-"*"  {adjust(); return TIMES;}
-"/"  {adjust(); return DIVIDE;}
-"&"  {adjust(); return AND;}
-"|"  {adjust(); return OR;}
-"="  {adjust(); return EQ;}
-"<>" {adjust(); return NEQ;}
-"<"  {adjust(); return LT;}
-"<=" {adjust(); return LE;}
-">"  {adjust(); return GT;}
-">=" {adjust(); return GE;}
-":=" {adjust(); return ASSIGN;}
+<INITIAL>":="        { adjust(); return ASSIGN; }
+<INITIAL>"<>"        { adjust(); return NEQ; }
+<INITIAL>"<="        { adjust(); return LE; }
+<INITIAL>">="        { adjust(); return GE; }
 
+<INITIAL>"+"         { adjust(); return PLUS; }
+<INITIAL>"-"         { adjust(); return MINUS; }
+<INITIAL>"*"         { adjust(); return TIMES; }
+<INITIAL>"/"         { adjust(); return DIVIDE; }
 
-for  	 {adjust(); return FOR;}
-while  {adjust(); return WHILE;}
-if     {adjust(); return IF;}
-then   {adjust(); return THEN;}
-else   {adjust(); return ELSE;}
-break  {adjust(); return BREAK;}
-to     {adjust(); return TO;}
-do     {adjust(); return DO;}
-let    {adjust(); return LET;}
-in     {adjust(); return IN;}
-end    {adjust(); return END;}
-of     {adjust(); return OF;}
-var    {adjust(); return VAR;}
-type   {adjust(); return TYPE;}
-function  {adjust(); return FUNCTION;}
-array  {adjust(); return ARRAY;}
-nil    {adjust(); return NIL;}
+<INITIAL>"="         { adjust(); return EQ; }
+<INITIAL>"<"         { adjust(); return LT; }
+<INITIAL>">"         { adjust(); return GT; }
 
+<INITIAL>"&"         { adjust(); return AND; }
+<INITIAL>"|"         { adjust(); return OR; }
 
-[0-9]+	 {adjust(); yylval.ival=atoi(yytext); return INT;}
+<INITIAL>array       { adjust(); return ARRAY; }
+<INITIAL>if          { adjust(); return IF; }
+<INITIAL>then        { adjust(); return THEN; }
+<INITIAL>else        { adjust(); return ELSE; }
+<INITIAL>while       { adjust(); return WHILE; }
+<INITIAL>for         { adjust(); return FOR; }
+<INITIAL>to          { adjust(); return TO; }
+<INITIAL>do          { adjust(); return DO; }
+<INITIAL>let         { adjust(); return LET; }
+<INITIAL>in          { adjust(); return IN; }
+<INITIAL>end         { adjust(); return END; }
+<INITIAL>of          { adjust(); return OF; }
+<INITIAL>break       { adjust(); return BREAK; }
+<INITIAL>nil         { adjust(); return NIL; }
+<INITIAL>function    { adjust(); return FUNCTION; }
+<INITIAL>var         { adjust(); return VAR; }
+<INITIAL>type        { adjust(); return TYPE; }
 
-{id} {adjust();yylval.sval=strdup(yytext); return ID;}
+<INITIAL>"*/" {
+    adjust();
+    EM_error(EM_tokPos,"closing unopened comment");
+}
 
+<INITIAL>"/*" { 
+    adjust(); 
+    BEGIN(COMM); 
+    bracketCount++;
+}
 
-"/*"    {adjust(); ++commentNesting; BEGIN COMMENT_STATE;}
-<COMMENT_STATE>"/*"    {adjust(); ++commentNesting; continue;}
-<COMMENT_STATE>"*/"    {adjust(); --commentNesting; if(!commentNesting) BEGIN INITIAL;}
-<COMMENT_STATE>\n      {adjust(); EM_newline(); continue;}
-<COMMENT_STATE><<EOF>> {EM_error(EM_tokPos, "Unterminated comment."); yyterminate();}
-<COMMENT_STATE>.       {adjust();}
+<INITIAL>\"([^"\\\n]|\\.)*\n {
+    adjust();
+    EM_error(EM_tokPos,"unterminated string");
+}
 
+<INITIAL>\"([^"\\\n]|\\.)*\" {
+    adjust();
+    int len = yyleng - 2;
+    char *s = (char*)checked_malloc(len + 1);
+    int j = 0;
+    for (int i = 1; i < yyleng - 1; i++) {
+        if (yytext[i] == '\\') {
+            i++; 
+            switch (yytext[i]) {
+                case 'n':  s[j++] = '\n'; break;
+                case 't':  s[j++] = '\t'; break;
+                case 'r':  s[j++] = '\r'; break;
+                case '\\': s[j++] = '\\'; break;
+                case '"':  s[j++] = '"'; break;
+                default:
+                    EM_error(EM_tokPos,"invalid escape sequence");
+                    s[j++] = yytext[i];
+                    break;
+            }
+        } else {
+            s[j++] = yytext[i];
+        }
+    }
+    s[j] = '\0';
+    yylval.sval = String(s);
+    return STRING;
+}
 
-\"    {adjust(); strbuf_init(); BEGIN STRING_STATE;}
-<STRING_STATE>\"      {adjust(); BEGIN INITIAL; yylval.sval = strdup(strbuf); return STRING;}
-<STRING_STATE>\n      {adjust(); EM_error(EM_tokPos, "Unterminated string."); yyterminate();}
-<STRING_STATE>\\      {adjust(); BEGIN STRING_ESCAPE_STATE;}
-<STRING_STATE><<EOF>> {EM_error(EM_tokPos, "Unterminated string."); yyterminate();}
-<STRING_STATE>.       {adjust(); strbuf_pushback(*yytext); continue;}
+<INITIAL>[0-9]+ {
+    adjust();
+    yylval.ival = strtol(yytext, NULL, 10);
+    return INT;
+}
 
-<STRING_ESCAPE_STATE>n           {adjust(); strbuf_pushback('\n'); BEGIN STRING_STATE;}
-<STRING_ESCAPE_STATE>t           {adjust(); strbuf_pushback('\t'); BEGIN STRING_STATE;}
-<STRING_ESCAPE_STATE>{ctrl_char} {adjust(); strbuf_pushback(yytext[1]-'@'); BEGIN STRING_STATE;}
-<STRING_ESCAPE_STATE>[0-9]{3}    {adjust(); strbuf_pushback(atoi(yytext)); BEGIN STRING_STATE;}
-<STRING_ESCAPE_STATE>\"          {adjust(); strbuf_pushback('\"'); BEGIN STRING_STATE;}
-<STRING_ESCAPE_STATE>\\          {adjust(); strbuf_pushback('\\'); BEGIN STRING_STATE;}
-<STRING_ESCAPE_STATE>{space}+\\  {adjust();
-                                  for(int i = 0; yytext[i]; ++i) 
-                                    if (yytext[i] == '\n') EM_newline();
-                                   BEGIN STRING_STATE;}
+<INITIAL>[a-zA-Z][a-zA-Z0-9_]* {
+    adjust();
+    yylval.sval = String(yytext);
+    return ID;
+}
 
+<INITIAL>. {
+    adjust();
+    EM_error(EM_tokPos,"illegal token");
+}
 
-.	 {adjust(); EM_error(EM_tokPos,"illegal token");}
+<COMM>"*/" {
+    adjust(); 
+    bracketCount--;
+    if(bracketCount < 0) 
+    {
+        EM_error(EM_tokPos,"closing unopened comment bracker");
+    }
+    if(bracketCount == 0) 
+    {
+        BEGIN(INITIAL); 
+    }
+}
+<COMM>"/*" { 
+    adjust(); 
+    BEGIN(COMM); 
+    bracketCount++;
+}
+<COMM>\n {
+    adjust();
+    EM_newline();
+}
+<COMM>. {   
+    adjust(); 
+}
 
+<COMM><<EOF>> {
+    EM_error(EM_tokPos, "unclosed comment");
+    return 0;
+}
 
+<<EOF>> {
+    return 0;
+}
