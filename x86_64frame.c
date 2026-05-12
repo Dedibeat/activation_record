@@ -45,7 +45,20 @@ F_access F_allocLocal(F_frame f, bool escape) {
    * Decide where escaping and non-escaping locals live, maintain frame-local
    * offset state, and add the new access to f->locals.
    */
-  F_access access = placeholderAccess(escape);
+  F_access access = NULL;
+  if(!escape)
+  {
+    access = InReg(Temp_newtemp());
+    f->locals = F_AccessList(access, f->locals); // push access
+    return access;
+  }
+  int offset = 0;
+  F_accessList tail;
+  for(F_accessList locals = f->locals; locals; locals = locals->tail)
+  {
+    if(locals->head->kind == inFrame) offset -= F_wordSize; // locals go down
+  }
+  access = InFrame(offset - F_wordSize);
   f->locals = F_AccessList(access, f->locals);
   return access;
 }
@@ -62,16 +75,18 @@ F_frame F_newFrame(Temp_label label, U_boolList formals) {
   f->label = label;
   f->formals = NULL;
   f->locals = NULL;
-
+  int offset = 0;
   F_accessList head = F_AccessList(NULL, NULL);
   F_accessList tail = head;
   for (; formals; formals = formals->tail) {
-    tail->tail = F_AccessList(placeholderAccess(formals->head), NULL);
+    if(formals->head || 1) // All formals for now
+      tail->tail = F_AccessList(InFrame(offset += F_wordSize), NULL); // formals go up
+    else 
+      tail->tail = F_AccessList(InReg(Temp_newtemp()), NULL);
     tail = tail->tail;
   }
-  f->formals = head->tail;
+  f->formals = head->tail; // assign formal list
   free(head);
-
   return f;
 }
 
@@ -125,8 +140,14 @@ T_exp F_Exp(F_access acc, T_exp framePtr) {
    * In-frame accesses should become MEM(framePtr + offset). In-register
    * accesses should become TEMP(reg).
    */
-  (void)acc;
-  (void)framePtr;
+  if(acc->kind == inFrame)
+  {
+    return T_Mem(T_Binop(T_plus, framePtr, T_Const(acc->u.offset)));
+  }
+  else 
+  {
+    return T_Temp(acc->u.reg);
+  }
   return T_Const(0);
 }
 
