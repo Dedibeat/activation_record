@@ -1,7 +1,7 @@
 BIN := bin
-CC := gcc
+CC := gcc-15 -std=c11
 CFLAGS := -g -I. -I$(BIN)
-OBJS := $(addprefix $(BIN)/, semanttest.o y.tab.o lex.yy.o errormsg.o symbol.o absyn.o env.o types.o semant.o table.o util.o temp.o x86_64frame.o translate.o printtree.o tree.o)
+OBJS := $(addprefix $(BIN)/, semanttest.o y.tab.o lex.yy.o errormsg.o symbol.o absyn.o env.o types.o semant.o table.o util.o temp.o x86_64frame.o translate.o printtree.o tree.o escape.o)
 CH6_UNIT_OBJS := $(addprefix $(BIN)/, ch6_unit_tests.o symbol.o absyn.o table.o util.o temp.o x86_64frame.o translate.o printtree.o tree.o escape.o)
 
 $(BIN)/a.out: $(OBJS)
@@ -34,7 +34,7 @@ $(BIN)/y.tab.c $(BIN)/y.tab.h: tiger.grm | $(BIN)
 $(BIN)/lex.yy.c: tiger.lex $(BIN)/y.tab.h | $(BIN)
 	cd $(BIN) && lex ../tiger.lex
 
-clean: 
+clean:
 	rm -rf $(BIN)
 
 all-tests := $(addsuffix .test, $(notdir $(basename $(wildcard ../testcases_correct/*.tig))))

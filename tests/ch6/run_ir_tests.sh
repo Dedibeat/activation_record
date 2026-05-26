@@ -30,8 +30,8 @@ run_case() {
   done
 }
 
-run_case 01_local_var "MEM" "MOVE"
-run_case 02_two_escaping_locals "MEM" "BINOP(PLUS"
+run_case 01_local_var "TEMP" "MOVE"
+run_case 02_two_escaping_locals "TEMP" "BINOP(PLUS"
 run_case 03_nested_static_link_var "CALL" "MEM"
 run_case 04_nested_call_static_link "CALL" "BINOP(PLUS"
 run_case 05_records_arrays_control "CALL" "malloc" "initArray" "CJUMP"

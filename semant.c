@@ -13,11 +13,13 @@
 #include "env.h"
 #include "printtree.h"
 #include "semant.h"
+#include "escape.h"
 
 void SEM_transProg(A_exp exp) {
   S_table tenv = E_base_tenv();
   S_table venv = E_base_venv();
   Tr_level level = Tr_outermost();
+  Esc_findEscape(exp);
   struct expty et = transExp(level, venv, tenv, exp, NULL);
   F_fragList frags = Tr_getResult();
   Tr_printTree(et.exp);
@@ -54,7 +56,12 @@ struct expty transExp(Tr_level level, S_table venv, S_table tenv, A_exp a, Temp_
     case A_nilExp:    return expTy(Tr_nilExp(),                Ty_Nil());
     case A_intExp:    return expTy(Tr_intExp(a->u.intt),       Ty_Int());
     case A_stringExp: return expTy(Tr_stringExp(a->u.stringg), Ty_String());
-    case A_breakExp:  return expTy(Tr_breakExp(breakk),        Ty_Void());
+    case A_breakExp:
+      if (!breakk) {
+        EM_error(a->pos, "break is not inside a loop");
+        return expTy(Tr_noExp(), Ty_Void());
+      }
+      return expTy(Tr_breakExp(breakk), Ty_Void());
     case A_callExp:   return transExp_callExp(  level, venv, tenv, a, breakk);
     case A_opExp:     return transExp_opExp(    level, venv, tenv, a, breakk);
     case A_recordExp: return transExp_recordExp(level, venv, tenv, a, breakk);
@@ -193,15 +200,17 @@ struct expty transExp_seqExp(Tr_level level, S_table venv, S_table tenv, A_exp a
   if (!seq || !seq->head) return expTy(Tr_noExp(), Ty_Void());
 
   Tr_expList head = Tr_ExpList(NULL, NULL), p = head;
-  for (; seq && seq->tail; seq = seq->tail) {
+  for (; seq; seq = seq->tail) {
     struct expty s = transExp(level, venv, tenv, seq->head, breakk);
     p->tail = Tr_ExpList(s.exp, NULL);
     p = p->tail;
+    if (!seq->tail) {
+      Tr_expList exps = head->tail;
+      free(head);
+      return expTy(Tr_eseqExp(exps), s.ty);
+    }
   }
-  struct expty last = transExp(level, venv, tenv, seq->head, breakk);
-  head->head = last.exp;
-  
-  return expTy(Tr_eseqExp(head), last.ty);
+  assert(0);
 }
 
 struct expty transExp_assignExp(Tr_level level, S_table venv, S_table tenv, A_exp a, Temp_label breakk) {
@@ -242,15 +251,14 @@ struct expty transExp_ifExp(Tr_level level, S_table venv, S_table tenv, A_exp a,
 }
 
 struct expty transExp_whileExp(Tr_level level, S_table venv, S_table tenv, A_exp a, Temp_label breakk) {
+  Temp_label newbreak = Temp_newlabel();
   struct expty test = transExp(level, venv, tenv, a->u.whilee.test, breakk);
-  struct expty body = transExp(level, venv, tenv, a->u.whilee.body, breakk);
+  struct expty body = transExp(level, venv, tenv, a->u.whilee.body, newbreak);
 
   if (test.ty->kind != Ty_int)
     EM_error(a->u.whilee.test->pos, "expected unqualified-id");
   if (body.ty->kind != Ty_void)
     EM_error(a->u.whilee.test->pos, "body of while not unit");
-
-  Temp_label newbreak = Temp_newlabel();
 
   return expTy(Tr_whileExp(test.exp, body.exp, newbreak), Ty_Void());
 }
@@ -262,31 +270,34 @@ struct expty transExp_forExp(Tr_level level, S_table venv, S_table tenv, A_exp a
   if (lo.ty->kind != Ty_int || hi.ty->kind != Ty_int)
     EM_error(a->u.forr.lo->pos, "lo or hi expr is not int");
 
-  /*
-   * LET VAR i := lo
-   *     VAR lmt := hi
-   * IN
-   *    IF lo < hi THEN
-   *      WHILE i <= lmt DO
-   *        (body;
-   *         i := i+1)
-   */
   A_pos pos1 = a->pos;
   A_pos pos2 = a->u.forr.body->pos;
   S_symbol var = a->u.forr.var;
-  S_symbol lmt = S_Symbol("limit");
+  S_symbol lmt = Temp_newlabel();
+  A_dec index_dec = A_VarDec(pos1, var, S_Symbol("int"), a->u.forr.lo);
+  A_dec limit_dec = A_VarDec(pos1, lmt, S_Symbol("int"), a->u.forr.hi);
+  index_dec->u.var.escape = a->u.forr.escape;
+  limit_dec->u.var.escape = FALSE;
   A_exp ebody = a->u.forr.body;
+  A_var index_var = A_SimpleVar(pos1, var);
+  A_var limit_var = A_SimpleVar(pos1, lmt);
   A_exp transformed = A_LetExp(pos1,
-      A_DecList(A_VarDec(pos1, var, S_Symbol("int"), a->u.forr.lo),
-      A_DecList(A_VarDec(pos1, lmt, S_Symbol("int"), a->u.forr.hi), NULL)),
+      A_DecList(index_dec, A_DecList(limit_dec, NULL)),
           A_IfExp(pos1,
-              A_OpExp(pos1, A_ltOp, a->u.forr.lo, a->u.forr.hi),
+              A_OpExp(pos1, A_leOp,
+                      A_VarExp(pos1, index_var),
+                      A_VarExp(pos1, limit_var)),
               A_WhileExp(pos1,
-                  A_OpExp(pos1, A_leOp, A_VarExp(pos1, A_SimpleVar(pos1, var)), A_VarExp(pos1, A_SimpleVar(pos1, lmt))),
-                  A_SeqExp(pos2, A_ExpList(ebody, 
-                                 A_ExpList(A_OpExp(pos1, A_plusOp, A_VarExp(pos1, A_SimpleVar(pos1, var)), A_IntExp(pos1, 1)),
-                                 A_ExpList(A_SeqExp(pos2, NULL), // return no value
-                                 NULL))))),
+                  A_OpExp(pos1, A_leOp,
+                          A_VarExp(pos1, A_SimpleVar(pos1, var)),
+                          A_VarExp(pos1, A_SimpleVar(pos1, lmt))),
+                  A_SeqExp(pos2, A_ExpList(ebody,
+                                 A_ExpList(A_AssignExp(pos1,
+                                                       A_SimpleVar(pos1, var),
+                                                       A_OpExp(pos1, A_plusOp,
+                                                               A_VarExp(pos1, A_SimpleVar(pos1, var)),
+                                                               A_IntExp(pos1, 1))),
+                                           NULL)))),
               NULL)
   );
   return transExp(level, venv, tenv, transformed, breakk);
@@ -427,7 +438,7 @@ Tr_exp transDec_varDec(Tr_level level, S_table venv, S_table tenv, A_dec d, Temp
     EM_error(d->u.var.init->pos,
              "cannot initialize a nil type without specified record type");
 
-  Tr_access access = Tr_allocLocal(level, TRUE); // todo check escape = false
+  Tr_access access = Tr_allocLocal(level, d->u.var.escape);
   S_enter(venv, d->u.var.var, E_VarEntry(access, init.ty));
 
   return Tr_assignExp(Tr_simpleVar(access, level), init.exp);
@@ -446,10 +457,11 @@ Tr_exp transDec_functionDec(Tr_level level, S_table venv, S_table tenv, A_dec d,
 
     Ty_ty result = (fundecs->head->result)? S_look(tenv, fundecs->head->result) : Ty_Void();
     Temp_label label = Temp_newlabel();
-    U_boolList escapeList = NULL;
-    for (A_fieldList l = fundecs->head->params; l; l = l->tail)
-      // todo: handle no escape
-      escapeList = U_BoolList(TRUE, escapeList);
+    U_boolList escapeList = NULL, *escapeTail = &escapeList;
+    for (A_fieldList l = fundecs->head->params; l; l = l->tail) {
+      *escapeTail = U_BoolList(l->head->escape, NULL);
+      escapeTail = &(*escapeTail)->tail;
+    }
 
     S_enter(venv, name,
             E_FunEntry(Tr_newLevel(level, label, escapeList), label, formals,
@@ -556,17 +568,21 @@ Ty_ty actual_ty(Ty_ty ty) {
 }
 
 int has_same_ty(Ty_ty lty, Ty_ty rty) {
+  if (!lty || !rty) return 0;
   if (lty->kind == Ty_name && rty->kind == Ty_name) {
     Ty_ty l, r;
-    for (l = lty; l->u.name.ty->kind == Ty_name; l = l->u.name.ty);
-    for (r = rty; r->u.name.ty->kind == Ty_name; r = r->u.name.ty);
+    for (l = lty; l->u.name.ty && l->u.name.ty->kind == Ty_name; l = l->u.name.ty);
+    for (r = rty; r->u.name.ty && r->u.name.ty->kind == Ty_name; r = r->u.name.ty);
     if (l->u.name.sym == r->u.name.sym)
       return 1;
     return 0;
   }
   lty = actual_ty(lty);
   rty = actual_ty(rty);
-  if (lty->kind == rty->kind || (lty->kind == Ty_record && rty->kind == Ty_nil))
+  if (!lty || !rty) return 0;
+  if (lty->kind == rty->kind ||
+      (lty->kind == Ty_record && rty->kind == Ty_nil) ||
+      (lty->kind == Ty_nil && rty->kind == Ty_record))
     return 1;
   return 0;
 }

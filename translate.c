@@ -434,9 +434,8 @@ Tr_exp Tr_assignExp(Tr_exp lvar, Tr_exp rvar) {
 }
 
 Tr_exp Tr_LetExp(Tr_expList decs, Tr_exp body) {
-  Tr_exp d = Tr_seqStm(decs);
-
-  return Tr_Nx(T_Seq(unNx(d), unNx(body)));
+  if (!decs) return body;
+  return Tr_Ex(T_Eseq(unNx(Tr_seqStm(decs)), unEx(body)));
 }
 
 Tr_exp Tr_seqStm(Tr_expList list) {
