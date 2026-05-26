@@ -19,7 +19,13 @@ void SEM_transProg(A_exp exp) {
   S_table venv = E_base_venv();
   Tr_level level = Tr_outermost();
   struct expty et = transExp(level, venv, tenv, exp, NULL);
+  F_fragList frags = Tr_getResult();
   Tr_printTree(et.exp);
+  for (; frags; frags = frags->tail) {
+    if (frags->head->kind == F_procFrag) {
+      printStmList(stdout, T_StmList(frags->head->u.proc.body, NULL));
+    }
+  }
 }
 
 Ty_ty actual_ty(Ty_ty ty);

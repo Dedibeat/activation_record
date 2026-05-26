@@ -40,7 +40,6 @@ F_accessList F_formals(F_frame f) { return f->formals; }
 
 F_access F_allocLocal(F_frame f, bool escape) {
   /*
-   * TODO(ch6): Allocate a local in the frame or in a register.
    *
    * Decide where escaping and non-escaping locals live, maintain frame-local
    * offset state, and add the new access to f->locals.
@@ -65,7 +64,6 @@ F_access F_allocLocal(F_frame f, bool escape) {
 
 F_frame F_newFrame(Temp_label label, U_boolList formals) {
   /*
-   * TODO(ch6): Build the target-specific frame.
    *
    * Include the static link formal, assign formal accesses according to the
    * escape flags and your calling convention, and initialize local-allocation
@@ -77,9 +75,9 @@ F_frame F_newFrame(Temp_label label, U_boolList formals) {
   f->locals = NULL;
   int offset = 0;
   F_accessList head = F_AccessList(NULL, NULL);
-  F_accessList tail = head;
+  F_accessList tail = head; 
   for (; formals; formals = formals->tail) {
-    if(formals->head || 1) // All formals for now
+    if(formals->head) 
       tail->tail = F_AccessList(InFrame(offset += F_wordSize), NULL); // formals go up
     else 
       tail->tail = F_AccessList(InReg(Temp_newtemp()), NULL);
@@ -135,7 +133,6 @@ Temp_temp F_RV(void) {
 
 T_exp F_Exp(F_access acc, T_exp framePtr) {
   /*
-   * TODO(ch6): Translate an F_access into IR.
    *
    * In-frame accesses should become MEM(framePtr + offset). In-register
    * accesses should become TEMP(reg).
@@ -179,10 +176,30 @@ T_exp F_externalCall(string s, T_expList args) {
 }
 
 T_stm F_procEntryExit1(F_frame frame, T_stm stm) {
-  /*
-   * TODO(ch6): Add procedure-entry/procedure-exit moves once your frame
-   * representation knows where formals and special registers belong.
-   */
-  (void)frame;
-  return stm;
+  T_exp fp = T_Temp(F_FP());
+  T_stm first = NULL;
+  T_stm last = NULL;
+  int offset = F_wordSize;
+
+  for (F_accessList formal = frame->formals; formal; formal = formal->tail) {
+    F_access access = formal->head;
+
+    if (access->kind == inReg) {
+      T_stm move = T_Move(F_Exp(access, fp),
+                          T_Mem(T_Binop(T_plus, fp, T_Const(offset))));
+      T_stm seq = T_Seq(move, NULL);
+
+      if (!first) {
+        first = seq;
+      } else {
+        last->u.SEQ.right = seq;
+      }
+      last = seq;
+    }
+
+    offset += F_wordSize;
+  }
+  if (!first) return stm;
+  last->u.SEQ.right = stm;
+  return first;
 }
