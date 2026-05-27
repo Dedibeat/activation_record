@@ -37,11 +37,24 @@ $(BIN)/lex.yy.c: tiger.lex $(BIN)/y.tab.h | $(BIN)
 clean:
 	rm -rf $(BIN)
 
-all-tests := $(addsuffix .test, $(notdir $(basename $(wildcard ../testcases_correct/*.tig))))
+external-tests := $(addsuffix .test, $(notdir $(basename $(wildcard ../testcases_correct/*.tig))))
+book-tests := $(patsubst tests/book/%.tig,$(BIN)/testoutput/book/%.out,$(wildcard tests/book/*.tig))
+compilable-tests := $(patsubst tests/compilable/%.tig,$(BIN)/testoutput/compilable/%.out,$(wildcard tests/compilable/*.tig))
+uncompilable-tests := $(patsubst tests/uncompilable/%.tig,$(BIN)/testoutput/uncompilable/%.out,$(wildcard tests/uncompilable/*.tig))
 
-.PHONY: test ch6-unit-tests ch6-ir-tests
+.PHONY: clean test ch6-unit-tests ch6-ir-tests tiger-tests book-tests compilable-tests uncompilable-tests external-tests
 
-test: ch6-unit-tests ch6-ir-tests $(all-tests)
+test: ch6-unit-tests ch6-ir-tests tiger-tests external-tests
+
+tiger-tests: book-tests compilable-tests uncompilable-tests
+
+book-tests: $(book-tests)
+
+compilable-tests: $(compilable-tests)
+
+uncompilable-tests: $(uncompilable-tests)
+
+external-tests: $(external-tests)
 
 ch6-unit-tests: $(BIN)/ch6_unit_tests
 	$(BIN)/ch6_unit_tests
@@ -57,3 +70,29 @@ test49.test:
 	$(BIN)/a.out $< > $(BIN)/testoutput/$@ 2>&1
 	echo "==============================" >> $(BIN)/testoutput/$@
 	cat $< >> $(BIN)/testoutput/$@
+
+$(BIN)/testoutput/book/%.out: tests/book/%.tig $(BIN)/a.out
+	mkdir -p $(BIN)/testoutput/book
+	TIGER_PARSE_ONLY=1 $(BIN)/a.out $< > $@ 2>&1 || { code=$$?; if [ $$code -ge 128 ]; then exit $$code; fi; }
+	echo "==============================" >> $@
+	cat $< >> $@
+
+$(BIN)/testoutput/compilable/%.out: tests/compilable/%.tig $(BIN)/a.out
+	mkdir -p $(BIN)/testoutput/compilable
+	TIGER_PARSE_ONLY=1 $(BIN)/a.out $< > $@ 2>&1
+	echo "==============================" >> $@
+	cat $< >> $@
+
+$(BIN)/testoutput/uncompilable/%.out: tests/uncompilable/%.tig $(BIN)/a.out
+	mkdir -p $(BIN)/testoutput/uncompilable
+	if $(BIN)/a.out $< > $@ 2>&1; then \
+		if ! grep -Eiq "error|illegal|invalid|unclosed|unterminated|incompatible|not inside" $@; then \
+			echo "FAIL $<: expected compiler diagnostic" >&2; \
+			exit 1; \
+		fi; \
+	else \
+		code=$$?; \
+		if [ $$code -ge 128 ]; then exit $$code; fi; \
+	fi
+	echo "==============================" >> $@
+	cat $< >> $@

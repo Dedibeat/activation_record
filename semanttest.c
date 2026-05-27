@@ -24,8 +24,12 @@ A_exp parse(string fname)
 }
 
 int main(int argc, char **argv) {
+  A_exp root;
   if (argc!=2) {fprintf(stderr,"usage: a.out filename\n"); exit(1);}
-  SEM_transProg(parse(argv[1]));
+  root = parse(argv[1]);
+  if (getenv("TIGER_PARSE_ONLY")) return EM_anyErrors ? 1 : 0;
+  if (!root || EM_anyErrors) return 1;
+  SEM_transProg(root);
   printf("\n");
   return 0;
 }

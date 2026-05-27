@@ -1,5 +1,7 @@
 %{
 #include <string.h>
+#include <ctype.h>
+#include <stdlib.h>
 #include "util.h"
 #include "symbol.h"
 #include "absyn.h"
@@ -22,7 +24,7 @@ void adjust(void)
 %}
 %x COMM
 %%
-<INITIAL>[ \t]+      { adjust(); }
+<INITIAL>[ \t\r]+    { adjust(); }
 <INITIAL>\n          { adjust(); EM_newline(); }
 
 <INITIAL>","         { adjust(); return COMMA; }
@@ -102,8 +104,21 @@ void adjust(void)
                 case '\\': s[j++] = '\\'; break;
                 case '"':  s[j++] = '"'; break;
                 default:
-                    EM_error(EM_tokPos,"invalid escape sequence");
-                    s[j++] = yytext[i];
+                    if (isdigit((unsigned char)yytext[i])
+                        && isdigit((unsigned char)yytext[i + 1])
+                        && isdigit((unsigned char)yytext[i + 2])) {
+                        char digits[4] = {yytext[i], yytext[i + 1], yytext[i + 2], '\0'};
+                        int value = atoi(digits);
+                        if (value > 255) {
+                            EM_error(EM_tokPos,"invalid escape sequence");
+                        } else {
+                            s[j++] = (char)value;
+                        }
+                        i += 2;
+                    } else {
+                        EM_error(EM_tokPos,"invalid escape sequence");
+                        s[j++] = yytext[i];
+                    }
                     break;
             }
         } else {
