@@ -33,16 +33,17 @@ static escapeEntry EscapeEntry(int depth, bool *escape) {
 
 static void traverseExpList(S_table env, int depth, A_expList exps) {
   for (; exps; exps = exps->tail)
-    traverseExp(env, depth, exps->head);
+    if (exps->head) traverseExp(env, depth, exps->head);
 }
 
 static void traverseDecList(S_table env, int depth, A_decList decs) {
   for (; decs; decs = decs->tail)
-    traverseDec(env, depth, decs->head);
+    if (decs->head) traverseDec(env, depth, decs->head);
 }
 
 static void traverseFieldList(S_table env, int depth, A_fieldList fields) {
   for (; fields; fields = fields->tail) {
+    if (!fields->head) continue;
     fields->head->escape = FALSE;
     S_enter(env, fields->head->name,
             EscapeEntry(depth, &fields->head->escape));
@@ -51,11 +52,12 @@ static void traverseFieldList(S_table env, int depth, A_fieldList fields) {
 
 static void traverseEfieldList(S_table env, int depth, A_efieldList fields) {
   for (; fields; fields = fields->tail)
-    traverseExp(env, depth, fields->head->exp);
+    if (fields->head) traverseExp(env, depth, fields->head->exp);
 }
 
 static void traverseFundecList(S_table env, int depth, A_fundecList funcs) {
   for (; funcs; funcs = funcs->tail) {
+    if (!funcs->head) continue;
     S_beginScope(env);
     traverseFieldList(env, depth + 1, funcs->head->params);
     traverseExp(env, depth + 1, funcs->head->body);
@@ -142,6 +144,8 @@ static void traverseExp(S_table env, int depth, A_exp e) {
 }
 
 static void traverseDec(S_table env, int depth, A_dec d) {
+  if (!d) return;
+
   switch (d->kind) {
     case A_functionDec:
       traverseFundecList(env, depth, d->u.function);
