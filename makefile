@@ -1,6 +1,6 @@
 BIN := bin
-CC := gcc-15 -std=c11
-CFLAGS := -g -I. -I$(BIN)
+CC := gcc
+CFLAGS := -std=c11 -g -I. -I$(BIN)
 OBJS := $(addprefix $(BIN)/, semanttest.o y.tab.o lex.yy.o errormsg.o symbol.o absyn.o env.o types.o semant.o table.o util.o temp.o x86_64frame.o translate.o printtree.o tree.o escape.o)
 CH6_UNIT_OBJS := $(addprefix $(BIN)/, ch6_unit_tests.o symbol.o absyn.o table.o util.o temp.o x86_64frame.o translate.o printtree.o tree.o escape.o)
 
